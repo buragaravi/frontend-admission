@@ -9,10 +9,12 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { showToast } from '@/lib/toast';
 import { useDashboardHeader } from '@/components/layout/DashboardShell';
+import { useRouter } from 'next/navigation';
 
 const UserManagementPage = () => {
   const queryClient = useQueryClient();
   const { setHeaderContent, clearHeaderContent } = useDashboardHeader();
+  const router = useRouter();
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [formState, setFormState] = useState({
     name: '',
@@ -145,7 +147,11 @@ const UserManagementPage = () => {
                   </tr>
                 ) : (
                   filteredUsers.map((user) => (
-                    <tr key={user._id} className="transition hover:bg-blue-50/60 dark:hover:bg-slate-800/60">
+                    <tr
+                      key={user._id}
+                      className="cursor-pointer transition hover:bg-blue-50/60 dark:hover:bg-slate-800/60"
+                      onClick={() => router.push(`/superadmin/users/${user._id}/leads`)}
+                    >
                       <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">
                         {user.name}
                       </td>
@@ -170,7 +176,10 @@ const UserManagementPage = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => toggleActiveMutation.mutate(user)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleActiveMutation.mutate(user);
+                          }}
                           disabled={toggleActiveMutation.isPending}
                         >
                           {user.isActive ? 'Deactivate' : 'Activate'}

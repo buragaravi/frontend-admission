@@ -2,13 +2,47 @@
 
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { auth } from '@/lib/auth';
 import { leadAPI, userAPI } from '@/lib/api';
 import { Lead, LeadFilters, FilterOptions, User } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { useTheme } from '@/app/providers';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Cell,
+} from 'recharts';
+
+interface UserAnalytics {
+  totalLeads: number;
+  statusBreakdown: Record<string, number>;
+  mandalBreakdown: Array<{ mandal: string; count: number }>;
+  stateBreakdown: Array<{ state: string; count: number }>;
+  recentActivity: {
+    leadsUpdatedLast7Days: number;
+  };
+}
+
+const summaryCardStyles = [
+  'from-blue-500/10 via-blue-500/15 to-transparent text-blue-700 dark:text-blue-200',
+  'from-emerald-500/10 via-emerald-500/15 to-transparent text-emerald-700 dark:text-emerald-200',
+  'from-violet-500/10 via-violet-500/15 to-transparent text-violet-700 dark:text-violet-200',
+  'from-amber-500/10 via-amber-500/15 to-transparent text-amber-700 dark:text-amber-200',
+];
+
+const chartColors = ['#3b82f6', '#22c55e', '#f97316', '#a855f7', '#ef4444', '#14b8a6'];
+
+const formatNumber = (value: number) => new Intl.NumberFormat('en-IN').format(value);
 
 // Debounce hook for search
 function useDebounce<T>(value: T, delay: number): T {
@@ -31,6 +65,7 @@ export default function UserLeadsViewPage() {
   const router = useRouter();
   const params = useParams();
   const userId = params?.userId as string;
+  const { theme } = useTheme();
   const [currentUser, setCurrentUser] = useState(auth.getUser());
   const [viewingUser, setViewingUser] = useState<User | null>(null);
   const [page, setPage] = useState(1);
@@ -41,6 +76,7 @@ export default function UserLeadsViewPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [showLeadsTable, setShowLeadsTable] = useState(false);
   const queryClient = useQueryClient();
 
   // Debounce search inputs
@@ -94,6 +130,100 @@ export default function UserLeadsViewPage() {
     }
   }, [userData]);
 
+  const {
+    data: analyticsResponse,
+    isLoading: isLoadingAnalytics,
+  } = useQuery({
+    queryKey: ['user-analytics-summary', userId],
+    queryFn: async () => {
+      if (!userId) return null;
+      const response = await leadAPI.getAnalytics(userId);
+      return response.data || response;
+    },
+    enabled: !!userId && !!currentUser,
+    staleTime: 60000,
+  });
+
+  const analytics = (analyticsResponse?.data || analyticsResponse) as UserAnalytics | null;
+
+  const chartGridColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.2)' : '#e2e8f0';
+  const chartTextColor = theme === 'dark' ? '#cbd5f5' : '#475569';
+
+  const tooltipStyle = useMemo(
+    () => ({
+      backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff',
+      color: theme === 'dark' ? '#f8fafc' : '#1f2937',
+      borderRadius: '12px',
+      border:
+        theme === 'dark'
+          ? '1px solid rgba(148, 163, 184, 0.35)'
+          : '1px solid rgba(148, 163, 184, 0.2)',
+      boxShadow:
+        theme === 'dark'
+          ? '0 12px 36px rgba(15, 23, 42, 0.45)'
+          : '0 12px 36px rgba(15, 23, 42, 0.12)',
+      padding: '12px',
+    }),
+    [theme]
+  );
+
+  const summaryCards = useMemo(
+    () => [
+      {
+        label: 'Assigned Leads',
+        value: analytics?.totalLeads ?? 0,
+        helper: 'Allotted to this counsellor',
+      },
+      {
+        label: 'Touched (7 days)',
+        value: analytics?.recentActivity?.leadsUpdatedLast7Days ?? 0,
+        helper: 'Engaged recently',
+      },
+      {
+        label: 'New Leads',
+        value: analytics?.statusBreakdown?.New ?? analytics?.statusBreakdown?.new ?? 0,
+        helper: 'Waiting for first touch',
+      },
+      {
+        label: 'Interested',
+        value:
+          analytics?.statusBreakdown?.Interested ??
+          analytics?.statusBreakdown?.interested ??
+          0,
+        helper: 'High intent prospects',
+      },
+    ],
+    [analytics]
+  );
+
+  const statusChartData = useMemo(() => {
+    if (!analytics?.statusBreakdown) return [] as Array<{ name: string; value: number }>;
+    return Object.entries(analytics.statusBreakdown)
+      .map(([status, count]) => ({
+        name: status,
+        value: typeof count === 'number' ? count : Number(count) || 0,
+      }))
+      .filter((entry) => entry.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }, [analytics]);
+
+  const mandalChartData = useMemo(() => {
+    if (!analytics?.mandalBreakdown) return [] as Array<{ name: string; value: number }>;
+    return analytics.mandalBreakdown
+      .map((item) => ({ name: item.mandal, value: item.count }))
+      .filter((item) => item.value > 0)
+      .slice(0, 6);
+  }, [analytics]);
+
+  const stateChartData = useMemo(() => {
+    if (!analytics?.stateBreakdown) return [] as Array<{ name: string; value: number }>;
+    return analytics.stateBreakdown
+      .map((item) => ({ name: item.state, value: item.count }))
+      .filter((item) => item.value > 0)
+      .slice(0, 8);
+  }, [analytics]);
+
   // Load filter options
   useEffect(() => {
     const loadFilterOptions = async () => {
@@ -129,7 +259,8 @@ export default function UserLeadsViewPage() {
   // Fetch leads with React Query
   const {
     data: leadsData,
-    isLoading,
+    isLoading: isLoadingLeads,
+    isFetching: isFetchingLeads,
     isError,
     error,
     refetch,
@@ -139,7 +270,7 @@ export default function UserLeadsViewPage() {
       const response = await leadAPI.getAll(queryFilters);
       return response.data || response;
     },
-    enabled: !!currentUser && !!userId,
+    enabled: showLeadsTable && !!currentUser && !!userId,
     staleTime: 30000,
     refetchOnWindowFocus: false,
   });
@@ -241,8 +372,246 @@ export default function UserLeadsViewPage() {
         </header>
 
         <main className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Search and Filters */}
-          <Card className="mb-6">
+          <section className="mb-10 space-y-6">
+            {isLoadingAnalytics ? (
+              <Card className="flex min-h-[220px] items-center justify-center">
+                <div className="flex items-center gap-3 text-sm font-medium text-slate-500">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+                  Loading analytics for {viewingUser?.name || 'user'}…
+                </div>
+              </Card>
+            ) : analytics ? (
+              <>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {summaryCards.map((card, index) => (
+                    <Card
+                      key={card.label}
+                      className={`overflow-hidden border border-white/60 bg-gradient-to-br ${summaryCardStyles[index % summaryCardStyles.length]} p-6 shadow-lg shadow-blue-100/40 dark:border-slate-800/60 dark:shadow-none`}
+                    >
+                      <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500/80 dark:text-slate-400/80">
+                        {card.label}
+                      </p>
+                      <p className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-100">
+                        {formatNumber(card.value)}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500/90 dark:text-slate-400/90">{card.helper}</p>
+                    </Card>
+                  ))}
+                </div>
+
+                {statusChartData.length > 0 && (
+                  <Card className="space-y-6 p-6 shadow-lg shadow-blue-100/30 dark:shadow-none">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Lead Status Mix</h2>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          Distribution of leads assigned to {viewingUser?.name || 'this counsellor'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <div className="h-72">
+                        <ResponsiveContainer>
+                          <BarChart data={statusChartData}>
+                            <CartesianGrid stroke={chartGridColor} strokeDasharray="6 4" />
+                            <XAxis
+                              dataKey="name"
+                              stroke={chartTextColor}
+                              tickLine={false}
+                              axisLine={{ stroke: chartGridColor }}
+                              tick={{ fill: chartTextColor, fontSize: 12 }}
+                            />
+                            <YAxis
+                              stroke={chartTextColor}
+                              allowDecimals={false}
+                              tickLine={false}
+                              axisLine={{ stroke: chartGridColor }}
+                              tick={{ fill: chartTextColor, fontSize: 12 }}
+                            />
+                            <Tooltip
+                              contentStyle={tooltipStyle}
+                              cursor={{ fill: theme === 'dark' ? 'rgba(148, 163, 184, 0.12)' : 'rgba(59, 130, 246, 0.08)' }}
+                            />
+                            <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                              {statusChartData.map((entry, idx) => (
+                                <Cell key={`status-${entry.name}`} fill={chartColors[idx % chartColors.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="space-y-3">
+                        {statusChartData.map((item) => (
+                          <div
+                            key={item.name}
+                            className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-900/60"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{item.name}</p>
+                              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                                {formatNumber(item.value)}
+                              </p>
+                            </div>
+                            <span className="text-xs uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500">
+                              Leads
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                <div className="grid gap-6 lg:grid-cols-2">
+                  {mandalChartData.length > 0 && (
+                    <Card className="space-y-6 p-6 shadow-lg shadow-blue-100/30 dark:shadow-none">
+                      <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Top Mandals</h2>
+                      <div className="grid gap-6 lg:grid-cols-2">
+                        <div className="h-72">
+                          <ResponsiveContainer>
+                            <BarChart data={mandalChartData} layout="vertical" margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+                              <CartesianGrid stroke={chartGridColor} strokeDasharray="6 4" />
+                              <XAxis
+                                type="number"
+                                stroke={chartTextColor}
+                                tickLine={false}
+                                axisLine={{ stroke: chartGridColor }}
+                                tick={{ fill: chartTextColor, fontSize: 12 }}
+                              />
+                              <YAxis
+                                type="category"
+                                dataKey="name"
+                                stroke={chartTextColor}
+                                tickLine={false}
+                                axisLine={{ stroke: chartGridColor }}
+                                tick={{ fill: chartTextColor, fontSize: 12 }}
+                                width={110}
+                              />
+                              <Tooltip
+                                contentStyle={tooltipStyle}
+                                cursor={{ fill: theme === 'dark' ? 'rgba(148, 163, 184, 0.12)' : 'rgba(59, 130, 246, 0.08)' }}
+                              />
+                              <Bar dataKey="value" radius={[0, 12, 12, 0]}>
+                                {mandalChartData.map((entry, idx) => (
+                                  <Cell key={`mandal-${entry.name}`} fill={chartColors[idx % chartColors.length]} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="space-y-3">
+                          {mandalChartData.map((item, idx) => (
+                            <div
+                              key={item.name}
+                              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-900/60"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full"
+                                  style={{ backgroundColor: chartColors[idx % chartColors.length] }}
+                                />
+                                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{item.name}</span>
+                              </div>
+                              <span className="text-base font-semibold text-blue-600 dark:text-blue-300">
+                                {formatNumber(item.value)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {stateChartData.length > 0 && (
+                    <Card className="space-y-6 p-6 shadow-lg shadow-blue-100/30 dark:shadow-none">
+                      <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Leads by State</h2>
+                      <div className="grid gap-6 lg:grid-cols-2">
+                        <div className="h-72">
+                          <ResponsiveContainer>
+                            <PieChart>
+                              <Tooltip
+                                contentStyle={tooltipStyle}
+                                cursor={{ fill: theme === 'dark' ? 'rgba(148, 163, 184, 0.12)' : 'rgba(59, 130, 246, 0.08)' }}
+                              />
+                              <Pie
+                                data={stateChartData}
+                                dataKey="value"
+                                nameKey="name"
+                                innerRadius={60}
+                                outerRadius={95}
+                                paddingAngle={4}
+                              >
+                                {stateChartData.map((entry, idx) => (
+                                  <Cell key={`state-${entry.name}`} fill={chartColors[idx % chartColors.length]} />
+                                ))}
+                              </Pie>
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="space-y-3">
+                          {stateChartData.map((item, idx) => (
+                            <div
+                              key={item.name}
+                              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-900/60"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full"
+                                  style={{ backgroundColor: chartColors[idx % chartColors.length] }}
+                                />
+                                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{item.name}</span>
+                              </div>
+                              <span className="text-base font-semibold text-blue-600 dark:text-blue-300">
+                                {formatNumber(item.value)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+              </>
+            ) : (
+              <Card className="p-8 text-center">
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">No analytics available yet</h2>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  Once {viewingUser?.name || 'this counsellor'} starts working on leads, performance insights will appear
+                  here automatically.
+                </p>
+              </Card>
+            )}
+          </section>
+
+          <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                Assigned Leads ({analytics?.totalLeads ?? pagination.total ?? 0})
+              </h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Detailed list of every record currently owned by {viewingUser?.name || 'this counsellor'}.
+              </p>
+            </div>
+            <Button
+              variant={showLeadsTable ? 'outline' : 'primary'}
+              onClick={() => setShowLeadsTable((prev) => !prev)}
+            >
+              {showLeadsTable ? 'Hide Assigned Leads' : 'See Assigned Leads'}
+            </Button>
+          </div>
+
+          {!showLeadsTable && (
+            <Card className="p-8 text-center">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Assigned leads table hidden</h3>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Click “See Assigned Leads” above to explore the full list, apply filters, and audit individual records.
+              </p>
+            </Card>
+          )}
+          {showLeadsTable && (
+            <>
+              {/* Search and Filters */}
+              <Card className="mb-6">
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -375,7 +744,7 @@ export default function UserLeadsViewPage() {
                 </span>
               )}
             </p>
-            {isLoading && (
+            {(isLoadingLeads || isFetchingLeads) && (
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 Loading...
@@ -393,7 +762,7 @@ export default function UserLeadsViewPage() {
                 <Button onClick={() => refetch()}>Retry</Button>
               </div>
             </Card>
-          ) : leads.length === 0 && !isLoading ? (
+          ) : leads.length === 0 && !(isLoadingLeads || isFetchingLeads) ? (
             <Card>
               <div className="text-center py-8">
                 <p className="text-gray-600">No leads assigned to this user yet</p>
@@ -482,7 +851,7 @@ export default function UserLeadsViewPage() {
                     <Button
                       variant="outline"
                       onClick={() => setPage(1)}
-                      disabled={page === 1 || isLoading}
+                      disabled={page === 1 || isLoadingLeads || isFetchingLeads}
                       size="sm"
                       className="p-2"
                       title="First Page"
@@ -496,7 +865,7 @@ export default function UserLeadsViewPage() {
                     <Button
                       variant="outline"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page === 1 || isLoading}
+                      disabled={page === 1 || isLoadingLeads || isFetchingLeads}
                       size="sm"
                       className="p-2"
                       title="Previous Page"
@@ -524,7 +893,7 @@ export default function UserLeadsViewPage() {
                             key={pageNum}
                             variant={page === pageNum ? 'primary' : 'outline'}
                             onClick={() => setPage(pageNum)}
-                            disabled={isLoading}
+                            disabled={isLoadingLeads || isFetchingLeads}
                             size="sm"
                             className="min-w-[40px]"
                           >
@@ -538,7 +907,7 @@ export default function UserLeadsViewPage() {
                     <Button
                       variant="outline"
                       onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))}
-                      disabled={page === pagination.pages || isLoading}
+                      disabled={page === pagination.pages || isLoadingLeads || isFetchingLeads}
                       size="sm"
                       className="p-2"
                       title="Next Page"
@@ -552,7 +921,7 @@ export default function UserLeadsViewPage() {
                     <Button
                       variant="outline"
                       onClick={() => setPage(pagination.pages)}
-                      disabled={page === pagination.pages || isLoading}
+                      disabled={page === pagination.pages || isLoadingLeads || isFetchingLeads}
                       size="sm"
                       className="p-2"
                       title="Last Page"
@@ -570,7 +939,7 @@ export default function UserLeadsViewPage() {
                       <select
                         value={page}
                         onChange={(e) => setPage(Number(e.target.value))}
-                        disabled={isLoading}
+                        disabled={isLoadingLeads || isFetchingLeads}
                         className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/80 backdrop-blur-sm text-sm"
                       >
                         {Array.from({ length: Math.ceil(pagination.pages / 50) }, (_, i) => {
@@ -598,6 +967,8 @@ export default function UserLeadsViewPage() {
                 </div>
               )}
             </Card>
+          )}
+            </>
           )}
         </main>
       </div>
