@@ -5,10 +5,10 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useDashboardHeader } from '@/components/layout/DashboardShell';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { paymentSettingsAPI } from '@/lib/api';
+import { courseAPI, paymentSettingsAPI } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { CashfreeConfigPreview, CoursePaymentSettings } from '@/types';
+import { CashfreeConfigPreview, CoursePaymentSettings, Course } from '@/types';
 
 type FeeFormState = {
   defaultFee: string;
@@ -39,6 +39,35 @@ const ensureFeeFormState = (
     currency: course.payment.defaultFee?.currency || 'INR',
     branchFees,
   };
+};
+
+const formatAmount = (value: string | number | null | undefined, currency = 'INR') => {
+  if (value === null || value === undefined) {
+    return 'Not set';
+  }
+
+  let numeric: number | null = null;
+
+  if (typeof value === 'number') {
+    numeric = value;
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      numeric = null;
+    } else {
+      const parsed = Number.parseFloat(trimmed);
+      numeric = Number.isNaN(parsed) ? null : parsed;
+    }
+  }
+
+  if (numeric === null) {
+    return 'Not set';
+  }
+
+  const currencyPrefix = currency === 'INR' ? '₹' : `${currency} `;
+  return `${currencyPrefix}${numeric.toLocaleString('en-IN', {
+    maximumFractionDigits: 2,
+  })}`;
 };
 
 export default function PaymentSettingsPage() {
@@ -118,6 +147,12 @@ export default function PaymentSettingsPage() {
   });
   const [isFeePanelExpanded, setIsFeePanelExpanded] = useState(true);
   const [isCashfreeExpanded, setIsCashfreeExpanded] = useState(false);
+  const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
+  const [courseModalForm, setCourseModalForm] = useState({ name: '', code: '', description: '' });
+  const [branchModalCourseId, setBranchModalCourseId] = useState<string | null>(null);
+  const [branchModalForm, setBranchModalForm] = useState({ name: '', code: '', description: '' });
+  const [isEditingDefaults, setIsEditingDefaults] = useState(false);
+  const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!selectedCourseId && courseSettings.length > 0) {
@@ -141,6 +176,11 @@ export default function PaymentSettingsPage() {
     }
   }, [cashfreeConfig, cashfreeForm.isDirty]);
 
+  useEffect(() => {
+    setIsEditingDefaults(false);
+    setEditingBranchId(null);
+  }, [selectedCourseId]);
+
   const selectedCourse = useMemo(() => {
     if (!selectedCourseId) return null;
     return courseSettings.find((item) => item.course._id === selectedCourseId) || null;
@@ -155,6 +195,11 @@ export default function PaymentSettingsPage() {
   const selectedCourseDefaultFeeSummary = selectedCourseForm?.defaultFee
     ? `Default fee ₹${Number(selectedCourseForm.defaultFee || 0).toLocaleString('en-IN')}`
     : 'Default fee not set';
+  const selectedCourseCurrency = selectedCourseForm?.currency || 'INR';
+  const branchModalCourse = useMemo(() => {
+    if (!branchModalCourseId) return null;
+    return courseSettings.find((item) => item.course._id === branchModalCourseId)?.course || null;
+  }, [branchModalCourseId, courseSettings]);
   const cashfreeStatusSummary = isLoadingCashfree
     ? 'Checking status…'
     : cashfreeConfig
@@ -215,6 +260,39 @@ export default function PaymentSettingsPage() {
         return;
       }
       showToast.error(error?.response?.data?.message || 'Failed to update Cashfree credentials');
+    },
+  });
+
+  const createCourseMutation = useMutation({
+    mutationFn: (payload: { name: string; code?: string; description?: string }) =>
+      courseAPI.create(payload),
+    onSuccess: () => {
+      showToast.success('Course created successfully');
+      setCourseModalForm({ name: '', code: '', description: '' });
+      setIsCreateCourseOpen(false);
+      refetch();
+    },
+    onError: (error: any) => {
+      showToast.error(error?.response?.data?.message || 'Failed to create course');
+    },
+  });
+
+  const createBranchMutation = useMutation({
+    mutationFn: ({
+      courseId,
+      payload,
+    }: {
+      courseId: string;
+      payload: { name: string; code?: string; description?: string };
+    }) => courseAPI.createBranch(courseId, payload),
+    onSuccess: () => {
+      showToast.success('Branch added successfully');
+      setBranchModalCourseId(null);
+      setBranchModalForm({ name: '', code: '', description: '' });
+      refetch();
+    },
+    onError: (error: any) => {
+      showToast.error(error?.response?.data?.message || 'Failed to add branch');
     },
   });
 
@@ -284,15 +362,65 @@ export default function PaymentSettingsPage() {
 
   const isSavingFees = saveFeesMutation.isPending;
   const isSavingCashfree = updateCashfreeMutation.isPending;
+  const isCreatingCourse = createCourseMutation.isPending;
+  const isCreatingBranch = createBranchMutation.isPending;
+
+  const openCreateCourseModal = () => {
+    setCourseModalForm({ name: '', code: '', description: '' });
+    setIsCreateCourseOpen(true);
+  };
+
+  const handleCreateCourse = () => {
+    if (!courseModalForm.name.trim()) {
+      showToast.error('Course name is required');
+      return;
+    }
+
+    createCourseMutation.mutate({
+      name: courseModalForm.name.trim(),
+      code: courseModalForm.code.trim() || undefined,
+      description: courseModalForm.description.trim() || undefined,
+    });
+  };
+
+  const openBranchModal = (course: Course) => {
+    setBranchModalCourseId(course._id);
+    setBranchModalForm({ name: '', code: '', description: '' });
+  };
+
+  const handleCreateBranch = () => {
+    if (!branchModalCourseId) return;
+    if (!branchModalForm.name.trim()) {
+      showToast.error('Branch name is required');
+      return;
+    }
+
+    createBranchMutation.mutate({
+      courseId: branchModalCourseId,
+      payload: {
+        name: branchModalForm.name.trim(),
+        code: branchModalForm.code.trim() || undefined,
+        description: branchModalForm.description.trim() || undefined,
+      },
+    });
+  };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[280px,1fr]">
+    <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[300px,1fr]">
       <aside className="rounded-3xl border border-white/60 bg-white/95 p-4 shadow-lg shadow-blue-100/20 backdrop-blur dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
         <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Courses</h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           Select a course to configure admission fees.
         </p>
-        <div className="mt-4 space-y-2">
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            Available
+          </span>
+          <Button variant="primary" size="sm" onClick={openCreateCourseModal} disabled={isCreatingCourse}>
+            Add Course
+          </Button>
+        </div>
+         <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {isLoading ? (
             <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/60">
               Loading courses…
@@ -312,7 +440,7 @@ export default function PaymentSettingsPage() {
                 : 'Default fee not set';
 
               return (
-                <div
+                 <div
                   key={course.course._id}
                   role="button"
                   tabIndex={0}
@@ -323,11 +451,11 @@ export default function PaymentSettingsPage() {
                       setSelectedCourseId(course.course._id);
                     }
                   }}
-                  className={cn(
-                    'group relative rounded-3xl border px-4 py-3 text-left text-sm outline-none transition',
+                   className={cn(
+                     'rounded-xl border border-slate-200/50 bg-white/90 px-4 py-4 text-left text-sm outline-none shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md dark:border-slate-700/60 dark:bg-slate-900/70',
                     isActive
-                      ? 'border-blue-200 bg-blue-50/80 text-blue-900 shadow-sm dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-100'
-                      : 'border-transparent bg-white/80 text-slate-600 hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-700 dark:bg-slate-900/30 dark:text-slate-300 dark:hover:border-blue-500/30 dark:hover:bg-slate-900/50'
+                       ? 'border-blue-200 bg-blue-50/70 text-blue-900 shadow-sm dark:border-blue-500/40 dark:bg-blue-900/25 dark:text-blue-100'
+                       : 'text-slate-600 dark:text-slate-300'
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -347,17 +475,24 @@ export default function PaymentSettingsPage() {
                     </span>
                   </div>
 
-                  <div className="pointer-events-none mt-3 grid gap-1 text-xs text-slate-500 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 dark:text-slate-400">
-                    {course.course.code && <p>Code: {course.course.code}</p>}
-                    <p>
-                      Branches:{' '}
-                      <span className="font-semibold text-slate-600 dark:text-slate-200">
-                        {course.branches.length}
-                      </span>
-                    </p>
-                    {course.course.description && (
-                      <p className="line-clamp-2 leading-snug">{course.course.description}</p>
-                    )}
+                   <div className="mt-3 grid gap-2 rounded-lg bg-slate-50/60 p-3 text-xs text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
+                     <div className="flex items-center justify-between gap-2">
+                       <span className="uppercase tracking-wide text-slate-400 dark:text-slate-500">Code</span>
+                       <span className="font-medium text-slate-700 dark:text-slate-200">
+                         {course.course.code || '—'}
+                       </span>
+                     </div>
+                     <div className="flex items-center justify-between gap-2">
+                       <span className="uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                         Branches
+                       </span>
+                       <span className="font-semibold text-slate-700 dark:text-slate-200">
+                         {course.branches.length}
+                       </span>
+                     </div>
+                     <div className="text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                       {course.course.description || 'No description provided.'}
+                     </div>
                   </div>
 
                 </div>
@@ -405,119 +540,203 @@ export default function PaymentSettingsPage() {
 
               {isFeePanelExpanded && (
                 <div className="mt-4 space-y-4">
-                  <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                    Base configuration
-                  </p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                    <Input
-                      label="Default Admission Fee"
-                      type="number"
-                      min={0}
-                      value={selectedCourseForm!.defaultFee}
-                      onChange={(event) =>
-                        setFeeForms((prev) => ({
-                          ...prev,
-                          [selectedCourse.course._id]: {
-                            ...(prev[selectedCourse.course._id] ||
-                              ensureFeeFormState(selectedCourse.course._id, prev, courseSettings)),
-                            defaultFee: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder="e.g. 50000"
-                    />
-                    <Input
-                      label="Currency"
-                        value={selectedCourseForm!.currency}
-                      onChange={(event) =>
-                        setFeeForms((prev) => ({
-                          ...prev,
-                          [selectedCourse.course._id]: {
-                            ...(prev[selectedCourse.course._id] ||
-                              ensureFeeFormState(selectedCourse.course._id, prev, courseSettings)),
-                            currency: event.target.value.toUpperCase(),
-                          },
-                        }))
-                      }
-                      placeholder="INR"
-                    />
-                  </div>
-                </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                      Branch overrides
-                    </p>
-                    {selectedCourse.branches.length > 0 && (
+                   <div className="rounded-2xl border border-slate-200/60 bg-white/85 p-5 dark:border-slate-800/70 dark:bg-slate-900/70">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                          Base configuration
+                        </p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              Default fee
+                            </span>
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">
+                              {formatAmount(selectedCourseForm!.defaultFee, selectedCourseCurrency)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              Currency
+                            </span>
+                            <span className="font-medium text-slate-700 dark:text-slate-200">
+                              {selectedCourseCurrency}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => handleApplySameForAll(selectedCourse.course._id)}
-                        disabled={!selectedCourseForm!.defaultFee}
+                        onClick={() => setIsEditingDefaults((prev) => !prev)}
                       >
-                        Apply same for all
+                        {isEditingDefaults ? 'Hide Fields' : 'Edit Defaults'}
                       </Button>
+                    </div>
+
+                    {isEditingDefaults && (
+                      <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                        <Input
+                          label="Default Admission Fee"
+                          type="number"
+                          min={0}
+                          value={selectedCourseForm!.defaultFee}
+                          onChange={(event) =>
+                            setFeeForms((prev) => ({
+                              ...prev,
+                              [selectedCourse.course._id]: {
+                                ...(prev[selectedCourse.course._id] ||
+                                  ensureFeeFormState(selectedCourse.course._id, prev, courseSettings)),
+                                defaultFee: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="e.g. 50000"
+                        />
+                        <Input
+                          label="Currency"
+                          value={selectedCourseForm!.currency}
+                          onChange={(event) =>
+                            setFeeForms((prev) => ({
+                              ...prev,
+                              [selectedCourse.course._id]: {
+                                ...(prev[selectedCourse.course._id] ||
+                                  ensureFeeFormState(selectedCourse.course._id, prev, courseSettings)),
+                                currency: event.target.value.toUpperCase(),
+                              },
+                            }))
+                          }
+                          placeholder="INR"
+                        />
+                      </div>
                     )}
                   </div>
-                  {selectedCourse.branches.length > 0 ? (
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      {selectedCourse.branches.map((branch) => (
-                        <div
-                          key={branch._id}
-                          className="rounded-2xl border border-slate-200 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/50"
+
+                   <div className="rounded-2xl border border-slate-200/60 bg-white/85 p-5 dark:border-slate-800/70 dark:bg-slate-900/70">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                        Branch overrides
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedCourse.branches.length > 0 && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleApplySameForAll(selectedCourse.course._id)}
+                            disabled={!selectedCourseForm!.defaultFee}
+                          >
+                            Apply same for all
+                          </Button>
+                        )}
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => openBranchModal(selectedCourse.course)}
+                          disabled={isCreatingBranch}
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                {branch.name}
-                              </p>
-                              {branch.code && (
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  Code: {branch.code}
-                                </p>
+                          Add Branch
+                        </Button>
+                      </div>
+                    </div>
+                    {selectedCourse.branches.length > 0 ? (
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {selectedCourse.branches.map((branch) => {
+                          const branchValue = selectedCourseForm!.branchFees[branch._id] || '';
+                          const inheritsDefault = branchValue === '';
+                          const isBranchEditing = editingBranchId === branch._id;
+                          const displayedAmount = inheritsDefault
+                            ? selectedCourseForm!.defaultFee
+                            : branchValue;
+
+                          return (
+                             <div
+                               key={branch._id}
+                               className="rounded-xl border border-slate-200/60 bg-white/90 p-4 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md dark:border-slate-700/60 dark:bg-slate-900/70"
+                             >
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                    {branch.name}
+                                  </p>
+                                   <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                     {branch.code ? `Code: ${branch.code}` : 'No code assigned'}
+                                   </div>
+                                   {branch.description && (
+                                     <div className="mt-2 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                                       {branch.description}
+                                     </div>
+                                   )}
+                                </div>
+                                <div className="flex flex-col items-end gap-2">
+                                  {!branch.isActive && (
+                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">
+                                      Inactive
+                                    </span>
+                                  )}
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() =>
+                                      setEditingBranchId((prev) => (prev === branch._id ? null : branch._id))
+                                    }
+                                  >
+                                    {isBranchEditing ? 'Close' : inheritsDefault ? 'Set Amount' : 'Edit Amount'}
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                    Configured fee
+                                  </span>
+                                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                                    {inheritsDefault
+                                      ? `${formatAmount(
+                                          selectedCourseForm!.defaultFee,
+                                          selectedCourseCurrency
+                                        )} (default)`
+                                      : formatAmount(branchValue, selectedCourseCurrency)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {isBranchEditing && (
+                                <Input
+                                  className="mt-3"
+                                  label="Branch Fee Override"
+                                  type="number"
+                                  min={0}
+                                  value={branchValue}
+                                  onChange={(event) =>
+                                    setFeeForms((prev) => {
+                                      const nextForm =
+                                        prev[selectedCourse.course._id] ||
+                                        ensureFeeFormState(selectedCourse.course._id, prev, courseSettings);
+                                      return {
+                                        ...prev,
+                                        [selectedCourse.course._id]: {
+                                          ...nextForm,
+                                          branchFees: {
+                                            ...nextForm.branchFees,
+                                            [branch._id]: event.target.value,
+                                          },
+                                        },
+                                      };
+                                    })
+                                  }
+                                  placeholder="Leave blank to inherit default"
+                                />
                               )}
                             </div>
-                            {!branch.isActive && (
-                              <span className="text-[10px] font-semibold uppercase text-amber-500">
-                                Inactive
-                              </span>
-                            )}
-                          </div>
-                          <Input
-                            label="Branch Fee"
-                            type="number"
-                            min={0}
-                            value={selectedCourseForm!.branchFees[branch._id] || ''}
-                            onChange={(event) =>
-                              setFeeForms((prev) => {
-                                const nextForm =
-                                  prev[selectedCourse.course._id] ||
-                                  ensureFeeFormState(selectedCourse.course._id, prev, courseSettings);
-                                return {
-                                  ...prev,
-                                  [selectedCourse.course._id]: {
-                                    ...nextForm,
-                                    branchFees: {
-                                      ...nextForm.branchFees,
-                                      [branch._id]: event.target.value,
-                                    },
-                                  },
-                                };
-                              })
-                            }
-                            placeholder="Inherit default if empty"
-                            className="mt-3"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-                      No branches defined for this course yet.
-                    </p>
-                  )}
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-400">
+                        No branches defined for this course yet. Add the first branch to configure fees.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -665,6 +884,144 @@ export default function PaymentSettingsPage() {
           )}
         </section>
       </div>
+
+      {isCreateCourseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="relative w-full max-w-md rounded-3xl border border-white/10 bg-white/95 p-6 shadow-2xl shadow-blue-500/20 dark:border-slate-700 dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => setIsCreateCourseOpen(false)}
+              className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+              aria-label="Close add course modal"
+            >
+              ×
+            </button>
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Create Course
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Add a new course to manage admission fees and branch configuration.
+                </p>
+              </div>
+              <Input
+                label="Course Name"
+                value={courseModalForm.name}
+                onChange={(event) =>
+                  setCourseModalForm((prev) => ({ ...prev, name: event.target.value }))
+                }
+                placeholder="e.g. Bachelor of Technology"
+              />
+              <Input
+                label="Course Code"
+                value={courseModalForm.code}
+                onChange={(event) =>
+                  setCourseModalForm((prev) => ({ ...prev, code: event.target.value }))
+                }
+                placeholder="Optional identifier"
+              />
+              <Input
+                label="Description"
+                value={courseModalForm.description}
+                onChange={(event) =>
+                  setCourseModalForm((prev) => ({ ...prev, description: event.target.value }))
+                }
+                placeholder="Short description (optional)"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setIsCreateCourseOpen(false)}
+                  disabled={isCreatingCourse}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleCreateCourse}
+                  disabled={isCreatingCourse}
+                >
+                  {isCreatingCourse ? 'Creating…' : 'Create Course'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {branchModalCourseId && branchModalCourse && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="relative w-full max-w-md rounded-3xl border border-white/10 bg-white/95 p-6 shadow-2xl shadow-blue-500/20 dark:border-slate-700 dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => setBranchModalCourseId(null)}
+              className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+              aria-label="Close add branch modal"
+            >
+              ×
+            </button>
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Add Branch
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Create a new branch under{' '}
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {branchModalCourse.name}
+                  </span>
+                  .
+                </p>
+              </div>
+              <Input
+                label="Branch Name"
+                value={branchModalForm.name}
+                onChange={(event) =>
+                  setBranchModalForm((prev) => ({ ...prev, name: event.target.value }))
+                }
+                placeholder="e.g. Computer Science Engineering"
+              />
+              <Input
+                label="Branch Code"
+                value={branchModalForm.code}
+                onChange={(event) =>
+                  setBranchModalForm((prev) => ({ ...prev, code: event.target.value }))
+                }
+                placeholder="Optional identifier"
+              />
+              <Input
+                label="Description"
+                value={branchModalForm.description}
+                onChange={(event) =>
+                  setBranchModalForm((prev) => ({ ...prev, description: event.target.value }))
+                }
+                placeholder="Short description (optional)"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setBranchModalCourseId(null)}
+                  disabled={isCreatingBranch}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleCreateBranch}
+                  disabled={isCreatingBranch}
+                >
+                  {isCreatingBranch ? 'Saving…' : 'Add Branch'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
