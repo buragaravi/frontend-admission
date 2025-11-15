@@ -124,6 +124,8 @@ export default function LeadFormPage() {
           district: '',
           mandal: '',
           state: 'Andhra Pradesh',
+          quota: 'Not Applicable',
+          applicationStatus: '',
         });
         setShowSuccess(false);
       }, 3000);

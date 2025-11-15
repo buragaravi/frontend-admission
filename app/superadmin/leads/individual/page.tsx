@@ -316,7 +316,7 @@ const IndividualLeadPage = () => {
                 onChange={handleChange('quota')}
                 className="w-full rounded-xl border-2 border-gray-200 bg-white/80 px-4 py-3 text-sm font-medium text-slate-600 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100"
               >
-                {(filterOptions?.quotas || ['Not Applicable', 'Management', 'Convenor']).map((quota) => (
+                {['Not Applicable', 'Management', 'Convenor'].map((quota) => (
                   <option key={quota} value={quota}>
                     {quota}
                   </option>
@@ -355,7 +355,7 @@ const IndividualLeadPage = () => {
                 onChange={handleChange('applicationStatus')}
                 className="w-full rounded-xl border-2 border-gray-200 bg-white/80 px-4 py-3 text-sm font-medium text-slate-600 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100"
               >
-                {(filterOptions?.applicationStatuses || ['Not Provided', 'Submitted', 'Not Submitted']).map((status) => (
+                {['Not Provided', 'Submitted', 'Not Submitted'].map((status) => (
                   <option key={status} value={status}>
                     {status}
                   </option>
