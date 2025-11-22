@@ -1232,7 +1232,30 @@ export default function LeadDetailPage() {
 
           {/* SECTION 2: HISTORY & REMARKS */}
           <Card>
-            <h2 className="text-xl font-semibold mb-6">History & Remarks</h2>
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-4">History & Remarks</h2>
+              {/* Last Follow Up & Created On Info */}
+              <div className="flex flex-wrap gap-4 text-sm">
+                {lead.lastFollowUp && (
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Last Follow Up:</span>
+                    <span className="text-gray-900 dark:text-gray-100">{formatDate(lead.lastFollowUp)}</span>
+                  </div>
+                )}
+                {lead.createdAt && (
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Created On:</span>
+                    <span className="text-gray-900 dark:text-gray-100">{formatDate(lead.createdAt)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
             {isLoadingLogs ? (
               <div className="text-center py-8">
                 <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -1456,47 +1479,6 @@ export default function LeadDetailPage() {
                 </span>
               </div>
             )}
-          </Card>
-
-          {/* Metadata */}
-          <Card>
-            <h2 className="text-xl font-semibold mb-4">Metadata</h2>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Source</label>
-                <p className="text-gray-900">{lead.source || '-'}</p>
-              </div>
-              {lead.assignedTo && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-500 mb-1">Assigned To</label>
-                  <p className="text-gray-900">
-                    {typeof lead.assignedTo === 'object' ? lead.assignedTo.name : '-'}
-                  </p>
-                </div>
-              )}
-              {lead.uploadedBy && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-500 mb-1">Uploaded By</label>
-                  <p className="text-gray-900">
-                    {typeof lead.uploadedBy === 'object' ? lead.uploadedBy.name : '-'}
-                  </p>
-                </div>
-              )}
-              {lead.lastFollowUp && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-500 mb-1">Last Follow Up</label>
-                  <p className="text-gray-900">{formatDate(lead.lastFollowUp)}</p>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Created At</label>
-                <p className="text-gray-900">{formatDate(lead.createdAt)}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Updated At</label>
-                <p className="text-gray-900">{formatDate(lead.updatedAt)}</p>
-              </div>
-            </div>
           </Card>
 
           {/* Status Changes Timeline */}

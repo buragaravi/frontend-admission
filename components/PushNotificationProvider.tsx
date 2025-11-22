@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { initializePushNotifications, subscribeToPushNotifications, isSubscribedToPush } from '@/lib/pushNotifications';
+import { initializePushNotifications } from '@/lib/pushNotifications';
 import { auth } from '@/lib/auth';
 
 export function PushNotificationProvider({ children }: { children: React.ReactNode }) {
@@ -22,7 +22,7 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
           return;
         }
 
-        // Initialize push notifications
+        // Initialize push notifications (automatically requests permission and subscribes)
         await initializePushNotifications();
         setIsInitialized(true);
       } catch (error) {
@@ -30,7 +30,12 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
       }
     };
 
-    init();
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(() => {
+      init();
+    }, 1000);
+
+    return () => clearTimeout(timer);
   }, []);
 
   return <>{children}</>;

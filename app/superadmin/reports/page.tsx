@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { reportAPI, userAPI } from '@/lib/api';
 import { format } from 'date-fns';
@@ -19,10 +19,35 @@ export default function ReportsPage() {
     period: 'custom' as 'weekly' | 'monthly' | 'custom',
   });
 
-  const { data: users } = useQuery({
+  const { data: usersResponse } = useQuery({
     queryKey: ['users'],
-    queryFn: () => userAPI.getAll(),
+    queryFn: async () => {
+      try {
+        const response = await userAPI.getAll();
+        // Backend returns { success: true, data: users, ... }
+        // axios response.data is { success: true, data: users, ... }
+        // userAPI.getAll() returns response.data, so we get { success: true, data: users, ... }
+        // Extract the actual users array from response.data
+        if (Array.isArray(response)) {
+          return response;
+        }
+        if (response?.data && Array.isArray(response.data)) {
+          return response.data;
+        }
+        // Fallback: if response structure is different
+        return [];
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        return [];
+      }
+    },
   });
+
+  // Ensure users is always an array
+  const users = React.useMemo(() => {
+    if (!usersResponse) return [];
+    return Array.isArray(usersResponse) ? usersResponse : [];
+  }, [usersResponse]);
 
   const { data: callReports, isLoading: isLoadingCalls, error: callReportsError } = useQuery({
     queryKey: ['callReports', callFilters],

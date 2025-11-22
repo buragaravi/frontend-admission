@@ -22,6 +22,7 @@ import {
   DASHBOARD_PERMISSION_KEY,
   PermissionModuleKey,
 } from '@/constants/permissions';
+import { TestNotificationsButton } from '@/components/TestNotificationsButton';
 
 const BASE_NAV_ITEMS: DashboardNavItem[] = [
   { href: '/superadmin/dashboard', label: 'Overview', icon: HomeIcon, permissionKey: DASHBOARD_PERMISSION_KEY },
@@ -159,6 +160,8 @@ export default function SuperAdminLayout({ children }: { children: ReactNode }) 
       permissions={permissionConfig}
     >
       {children}
+      {/* Floating Test Notifications Button - Only for Super Admin */}
+      {currentUser?.roleName === 'Super Admin' && <TestNotificationsButton />}
     </DashboardShell>
   );
 }

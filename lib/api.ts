@@ -671,6 +671,25 @@ export const paymentAPI = {
 
 // Notification API
 export const notificationAPI = {
+  // Get notification configuration
+  getConfig: async () => {
+    const response = await api.get('/notifications/config');
+    return response.data;
+  },
+  // Update notification configuration
+  updateConfig: async (config: {
+    email_channel?: 'brevo' | 'nodemailer' | 'both';
+    sms_channel?: string;
+    push_enabled?: string;
+  }) => {
+    const response = await api.put('/notifications/config', config);
+    return response.data;
+  },
+  // Test email channels
+  testEmailChannels: async (testEmail: string) => {
+    const response = await api.post('/notifications/config/test-email', { testEmail });
+    return response.data;
+  },
   getAll: async (params?: { page?: number; limit?: number; unreadOnly?: boolean }) => {
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append('page', String(params.page));
@@ -709,6 +728,16 @@ export const notificationAPI = {
   },
   sendTestPush: async () => {
     const response = await api.post('/notifications/push/test');
+    return response.data;
+  },
+  // Send test notifications (push and email) to all users
+  sendTestNotificationsToAll: async () => {
+    const response = await api.post('/notifications/test-all');
+    return response.data;
+  },
+  // Get user's push subscriptions (for debugging)
+  getUserSubscriptions: async () => {
+    const response = await api.get('/notifications/push/subscriptions');
     return response.data;
   },
 };
