@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { reportAPI, userAPI } from '@/lib/api';
 import { format } from 'date-fns';
@@ -29,9 +29,6 @@ export default function ReportsPage() {
     queryFn: () => reportAPI.getDailyCallReports(callFilters),
     enabled: activeTab === 'calls',
     retry: 2,
-    onError: (err) => {
-      console.error('Error fetching call reports:', err);
-    },
   });
 
   const { data: conversionReports, isLoading: isLoadingConversions, error: conversionReportsError } = useQuery({
@@ -39,10 +36,20 @@ export default function ReportsPage() {
     queryFn: () => reportAPI.getConversionReports(conversionFilters),
     enabled: activeTab === 'conversions',
     retry: 2,
-    onError: (err) => {
-      console.error('Error fetching conversion reports:', err);
-    },
   });
+
+  // Log errors separately
+  useEffect(() => {
+    if (callReportsError) {
+      console.error('Error fetching call reports:', callReportsError);
+    }
+  }, [callReportsError]);
+
+  useEffect(() => {
+    if (conversionReportsError) {
+      console.error('Error fetching conversion reports:', conversionReportsError);
+    }
+  }, [conversionReportsError]);
 
   const handlePeriodChange = (period: 'weekly' | 'monthly' | 'custom') => {
     const now = new Date();

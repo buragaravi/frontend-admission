@@ -49,10 +49,14 @@ export function NotificationBell() {
     },
     refetchInterval: 30000, // Refetch every 30 seconds
     retry: 2,
-    onError: (err) => {
-      console.error('[NotificationBell] Query error:', err);
-    },
   });
+
+  // Log errors separately
+  useEffect(() => {
+    if (error) {
+      console.error('[NotificationBell] Query error:', error);
+    }
+  }, [error]);
 
   // Extract data - notificationsData should now be the actual data object
   const unreadCount = notificationsData?.unreadCount ?? 0;

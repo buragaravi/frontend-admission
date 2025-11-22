@@ -104,7 +104,7 @@ export const subscribeToPushNotifications = async (): Promise<PushSubscription |
     // Subscribe to push
     const subscription = await swRegistration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey,
+      applicationServerKey: applicationServerKey as BufferSource,
     });
 
     // Send subscription to server
