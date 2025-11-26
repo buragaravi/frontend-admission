@@ -83,6 +83,7 @@ export default function LeadDetailPage() {
     'New',
     'Assigned',
     'Interested',
+    'Confirmed',
     'Not Interest',
     'Wrong Data',
     'Admitted',
